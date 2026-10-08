@@ -36,8 +36,10 @@ function getSheet_() {
       if (headers[h] !== HEADERS[h]) { match = false; break; }
     }
     if (!match) {
-      ss.deleteSheet(sheet);
-      sheet = null;
+      // clear all data and rewrite headers
+      sheet.clear();
+      sheet.appendRow(HEADERS);
+      sheet.getRange('A:B').setNumberFormat('@');
     }
   }
 
