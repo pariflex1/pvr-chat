@@ -374,7 +374,7 @@ async function login() {
     if (result.success) {
       currentUser = result.user;
       otherUser = result.other;
-      localStorage.setItem('chatUser', currentUser);
+      sessionStorage.setItem('chatUser', currentUser);
       enterChat();
     } else {
       showError('loginError', result.message || 'Invalid PIN');
@@ -391,7 +391,7 @@ function logout() {
   if (currentUser) apiPost({ action: 'setTyping', mobile: currentUser, isTyping: false }).catch(() => {});
   currentUser = null;
   otherUser = null;
-  localStorage.removeItem('chatUser');
+  sessionStorage.removeItem('chatUser');
   $('pinInput').value = '';
   showScreen('loginScreen');
 }
@@ -577,7 +577,7 @@ $('pinInput').addEventListener('input', () => {
 
 // ---- init ----
 window.addEventListener('load', () => {
-  const saved = localStorage.getItem('chatUser');
+    const saved = sessionStorage.getItem('chatUser');
   if (saved) {
     currentUser = saved;
     otherUser = saved === '9236647910' ? '9198433007' : '9236647910';

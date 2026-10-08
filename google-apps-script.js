@@ -207,7 +207,7 @@ function clearChat(mobile) {
   var sheet = getSheet_();
   var lastRow = sheet.getLastRow();
   if (lastRow > 1) {
-    sheet.getRange(2, 1, lastRow - 1, 5).clearContent();
+    sheet.deleteRows(2, lastRow - 1);
   }
   return jsonResponse({ success: true });
 }
