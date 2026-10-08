@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Chat</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-alt: #f0f2f5;
+  --border: #e9edef;
+  --text: #111b21;
+  --text-muted: #667781;
+  --primary: #00a884;
+  --primary-dark: #008069;
+  --header: #f0f2f5;
+  --chat-bg: #efeae2;
+  --incoming: #ffffff;
+  --outgoing: #d9fdd3;
+  --sent: #8696a0;
+  --read: #53bdeb;
+  --danger: #ea0038;
+  --input-bg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+:root {
+  --bg: #111b21;
+  --surface: #111b21;
+  --surface-alt: #202c33;
+  --border: #2a3942;
+  --text: #e9edef;
+  --text-muted: #8696a0;
+  --header: #202c33;
+  --chat-bg: #0b141a;
+  --incoming: #202c33;
+  --outgoing: #005c4b;
+  --input-bg: #2a3942;
+  color-scheme: dark;
+}
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#app {
+  max-width: 480px;
+  height: 100dvh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.screen { display: none; flex-direction: column; height: 100%; }
+.screen.active { display: flex; }
+
+/* login */
+#loginScreen { justify-content: center; padding: 24px; }
+
+.form-group { margin-bottom: 14px; }
+.form-group label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.form-group input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 16px;
+  background: var(--input-bg);
+  color: var(--text);
+}
+.form-group input:focus { outline: none; border-color: var(--primary); }
+
+.btn {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--primary);
+  color: white;
+  margin-top: 8px;
+}
+.btn:hover { background: var(--primary-dark); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.error-msg {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 10px;
+  text-align: center;
+  display: none;
+}
+.error-msg.show { display: block; }
+
+/* chat header */
+.chat-header {
+  background: var(--header);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  flex-shrink: 0;
+}
+
+.chat-user { flex: 1; min-width: 0; }
+
+.chat-user-num {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-user-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-height: 15px;
+}
+.chat-user-status.online { color: var(--primary); }
+.typing-text { color: var(--primary); font-weight: 500; }
+
+.logout-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: transparent;
+}
+.logout-btn:hover { background: var(--surface-alt); }
+
+/* messages */
+.messages-area {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--chat-bg);
+  padding: 12px 6% 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.date-divider { text-align: center; margin: 10px 0; }
+.date-divider span {
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 8px;
+}
+
+.msg-row { display: flex; margin-top: 2px; }
+.msg-row.sent { justify-content: flex-end; }
+.msg-row.received { justify-content: flex-start; }
+
+.msg-bubble {
+  max-width: 78%;
+  padding: 6px 8px 8px 10px;
+  border-radius: 8px;
+  font-size: 14.2px;
+  line-height: 19px;
+  word-wrap: break-word;
+}
+.msg-row.sent .msg-bubble {
+  background: var(--outgoing);
+  border-top-right-radius: 0;
+}
+.msg-row.received .msg-bubble {
+  background: var(--incoming);
+  border-top-left-radius: 0;
+}
+.msg-row.sent + .msg-row.sent .msg-bubble { border-bottom-right-radius: 0; }
+.msg-row.received + .msg-row.received .msg-bubble { border-bottom-left-radius: 0; }
+
+.msg-meta {
+  float: right;
+  margin: 6px -4px -4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  position: relative;
+  top: 4px;
+}
+.msg-time { font-size: 11px; color: var(--text-muted); }
+.msg-status svg { width: 16px; height: 16px; }
+
+.typing-bubble {
+  background: var(--incoming);
+  border-radius: 8px;
+  border-top-left-radius: 0;
+  padding: 12px 16px;
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.typing-bubble .dot {
+  width: 7px; height: 7px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  animation: blink 1.2s infinite;
+}
+.typing-bubble .dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-bubble .dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+
+/* composer */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  padding: 6px 8px;
+  gap: 6px;
+  background: var(--surface);
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+}
+.composer-wrap {
+  flex: 1;
+  background: var(--input-bg);
+  border-radius: 24px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+}
+.composer-wrap input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  color: var(--text);
+  outline: none;
+}
+.composer-wrap input::placeholder { color: var(--text-muted); }
+
+.send-btn {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.send-btn:hover { background: var(--primary-dark); }
+.send-btn:active { transform: scale(0.92); }
+.send-btn svg { width: 22px; height: 22px; fill: white; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="loginScreen" class="screen active">
+    <div class="form-group">
+      <input type="password" id="pinInput" maxlength="4" inputmode="numeric" autofocus>
+    </div>
+    <div id="loginError" class="error-msg"></div>
+  </div>
+
+  <div id="chatScreen" class="screen">
+    <div class="chat-header">
+      <div class="chat-user">
+        <div class="chat-user-status" id="chatStatus"></div>
+      </div>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+    <div class="messages-area" id="messagesArea"></div>
+    <div class="composer">
+      <div class="composer-wrap">
+        <input type="text" id="msgInput" placeholder="Type a message" autocomplete="off">
+      </div>
+      <button class="send-btn" onclick="sendMessage()">
+        <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = 'https://script.google.com/macros/s/AKfycbzV2GPGW8BVPVW8vzssWjODR29eLlmp6xeNwknUExh78D0RUqbewgnuaEVnOeXeqNxKyw/exec';
+
+let currentUser = null;
+let otherUser = null;
+let messagesData = [];
+let remoteTyping = false;
+let remoteOnline = false;
+let pollTimer = null;
+let heartbeatTimer = null;
+let typingTimer = null;
+let lastTypingSent = 0;
+
+const $ = id => document.getElementById(id);
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(id).classList.add('active');
+}
+
+function showError(id, msg) {
+  const el = $(id);
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+async function apiGet(params) {
+  const res = await fetch(API + '?' + new URLSearchParams(params), {
+    redirect: 'follow'
+  });
+  return res.json();
+}
+
+async function apiPost(payload) {
+  const res = await fetch(API, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    redirect: 'follow'
+  });
+  return res.json();
+}
+
+function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function statusTick(status) {
+  if (status === 'sent') {
+    return '<svg viewBox="0 0 24 24" width="16" height="16" fill="#8696a0"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+  }
+  if (status === 'delivered') {
+    return '<svg viewBox="0 0 24 24" width="17" height="17" fill="#8696a0"><path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/></svg>';
+  }
+  if (status === 'read') {
+    return '<svg viewBox="0 0 24 24" width="17" height="17" fill="#53bdeb"><path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/></svg>';
+  }
+  return '';
+}
+
+// ---- auth ----
+async function login() {
+  const pin = $('pinInput').value.trim();
+
+  if (!/^\d{4}$/.test(pin)) return showError('loginError', 'Invalid PIN');
+
+  try {
+    const result = await apiPost({ action: 'login', pin });
+    if (result.success) {
+      currentUser = result.user;
+      otherUser = result.other;
+      localStorage.setItem('chatUser', currentUser);
+      enterChat();
+    } else {
+      showError('loginError', result.message || 'Invalid PIN');
+      $('pinInput').value = '';
+    }
+  } catch (e) {
+    showError('loginError', 'Connection error');
+    $('pinInput').value = '';
+  }
+}
+
+function logout() {
+  stopAll();
+  if (currentUser) apiPost({ action: 'setTyping', mobile: currentUser, isTyping: false }).catch(() => {});
+  currentUser = null;
+  otherUser = null;
+  localStorage.removeItem('chatUser');
+  $('pinInput').value = '';
+  showScreen('loginScreen');
+}
+
+function enterChat() {
+  showScreen('chatScreen');
+  startHeartbeat();
+  startPolling();
+  refresh();
+  $('msgInput').focus();
+}
+
+// ---- polling / heartbeat ----
+let refreshing = false;
+
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(() => { refresh(); }, 2000);
+}
+function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+function startHeartbeat() {
+  stopHeartbeat();
+  apiPost({ action: 'heartbeat', mobile: currentUser }).catch(() => {});
+  heartbeatTimer = setInterval(() => {
+    apiPost({ action: 'heartbeat', mobile: currentUser }).catch(() => {});
+  }, 30000);
+}
+function stopHeartbeat() { if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; } }
+
+function stopAll() { stopPolling(); stopHeartbeat(); stopLocalTyping(); }
+
+// ---- messages ----
+async function refresh() {
+  if (!currentUser || refreshing) return;
+  refreshing = true;
+  try {
+    const result = await apiGet({ action: 'getMessages', user: currentUser });
+    if (result.success) {
+      // only call markRead if there are unread incoming messages
+      const hasUnread = result.messages.some(m => m.from === otherUser && m.status !== 'read');
+      if (hasUnread) {
+        apiPost({ action: 'markRead', mobile: currentUser }).catch(() => {});
+      }
+      messagesData = result.messages;
+      remoteTyping = result.typing || false;
+      remoteOnline = !!result.otherOnline;
+      renderStatus();
+      renderMessages();
+    }
+  } catch (e) {
+  } finally {
+    refreshing = false;
+  }
+}
+
+function renderStatus() {
+  const el = $('chatStatus');
+  if (remoteTyping) {
+    el.innerHTML = '<span class="typing-text">typing…</span>';
+    el.className = 'chat-user-status';
+  } else if (remoteOnline) {
+    el.textContent = 'online';
+    el.className = 'chat-user-status online';
+  } else {
+    el.textContent = '';
+    el.className = 'chat-user-status';
+  }
+}
+
+function renderMessages() {
+  const area = $('messagesArea');
+
+  if (messagesData.length === 0) {
+    area.innerHTML = '';
+    return;
+  }
+
+  let html = '';
+  let lastDate = '';
+
+  messagesData.forEach(msg => {
+    const d = new Date(msg.timestamp);
+    const dateKey = d.toDateString();
+    if (dateKey !== lastDate) {
+      const label = d.toDateString() === new Date().toDateString()
+        ? 'Today'
+        : d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+      html += '<div class="date-divider"><span>' + label + '</span></div>';
+      lastDate = dateKey;
+    }
+
+    const isSent = msg.from === currentUser;
+    html +=
+      '<div class="msg-row ' + (isSent ? 'sent' : 'received') + '">' +
+        '<div class="msg-bubble">' +
+          '<span>' + escapeHtml(msg.message) + '</span>' +
+          '<span class="msg-meta">' +
+            '<span class="msg-time">' + formatTime(msg.timestamp) + '</span>' +
+            (isSent ? '<span class="msg-status">' + statusTick(msg.status) + '</span>' : '') +
+          '</span>' +
+        '</div>' +
+      '</div>';
+  });
+
+  if (remoteTyping) {
+    html +=
+      '<div class="msg-row received">' +
+        '<div class="typing-bubble"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>' +
+      '</div>';
+  }
+
+  const nearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 100;
+  area.innerHTML = html;
+  if (nearBottom) area.scrollTop = area.scrollHeight;
+}
+
+async function sendMessage() {
+  const input = $('msgInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  messagesData.push({
+    from: currentUser,
+    to: otherUser,
+    message: text,
+    timestamp: new Date().toISOString(),
+    status: 'sent'
+  });
+  renderMessages();
+  const area = $('messagesArea');
+  area.scrollTop = area.scrollHeight;
+  input.value = '';
+
+  stopLocalTyping();
+  apiPost({ action: 'setTyping', mobile: currentUser, isTyping: false }).catch(() => {});
+
+  try {
+    await apiPost({ action: 'sendMessage', from: currentUser, to: otherUser, message: text });
+    refresh();
+  } catch (e) {}
+}
+
+// ---- typing ----
+function startLocalTyping() {
+  const now = Date.now();
+  if (now - lastTypingSent > 2000) {
+    lastTypingSent = now;
+    apiPost({ action: 'setTyping', mobile: currentUser, isTyping: true }).catch(() => {});
+  }
+  if (!typingTimer) {
+    typingTimer = setInterval(() => {
+      const n = Date.now();
+      if (n - lastTypingSent > 2000) {
+        lastTypingSent = n;
+        apiPost({ action: 'setTyping', mobile: currentUser, isTyping: true }).catch(() => {});
+      }
+    }, 2500);
+  }
+}
+
+function stopLocalTyping() {
+  if (typingTimer) { clearInterval(typingTimer); typingTimer = null; }
+}
+
+// ---- events ----
+$('msgInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+});
+$('msgInput').addEventListener('input', startLocalTyping);
+$('pinInput').addEventListener('input', () => {
+  if ($('pinInput').value.length === 4) login();
+});
+
+// ---- init ----
+window.addEventListener('load', () => {
+  const saved = localStorage.getItem('chatUser');
+  if (saved) {
+    currentUser = saved;
+    otherUser = saved === '9236647910' ? '9198433007' : '9236647910';
+    enterChat();
+  }
+});
+</script>
+</body>
+</html>
