@@ -82,6 +82,8 @@ function doPost(e) {
         return setTyping(String(data.mobile), data.isTyping);
       case 'markRead':
         return markRead(String(data.mobile));
+      case 'clearChat':
+        return clearChat(String(data.mobile));
       default:
         return jsonResponse({ success: false, message: 'Invalid action' });
     }
@@ -197,5 +199,15 @@ function markRead(user) {
 
 function setTyping(mobile, isTyping) {
   typingUntil[mobile] = isTyping ? Date.now() + TYPING_THRESHOLD_MS : 0;
+  return jsonResponse({ success: true });
+}
+
+function clearChat(mobile) {
+  if (!USERS[mobile]) return jsonResponse({ success: false, message: 'Invalid' });
+  var sheet = getSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, 5).clearContent();
+  }
   return jsonResponse({ success: true });
 }

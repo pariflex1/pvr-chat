@@ -282,6 +282,7 @@ body {
       <div class="chat-user">
         <div class="chat-user-status" id="chatStatus"></div>
       </div>
+      <button class="logout-btn" onclick="clearChat()">Clear</button>
       <button class="logout-btn" onclick="logout()">Logout</button>
     </div>
     <div class="messages-area" id="messagesArea"></div>
@@ -393,6 +394,15 @@ function logout() {
   localStorage.removeItem('chatUser');
   $('pinInput').value = '';
   showScreen('loginScreen');
+}
+
+async function clearChat() {
+  if (!confirm('Clear all messages?')) return;
+  try {
+    await apiPost({ action: 'clearChat', mobile: currentUser });
+    messagesData = [];
+    renderMessages();
+  } catch (e) {}
 }
 
 function enterChat() {
