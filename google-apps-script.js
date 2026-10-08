@@ -1,11 +1,10 @@
 // Google Apps Script for Chat App Backend
 // Deploy as Web App: Execute as "Me", Access "Anyone"
 // Single sheet: Messages
-// Images stored in Google Drive folder: PVRChat_Images
+// Images stored as base64 data URLs in the sheet
 
 const MESSAGES_SHEET = 'Messages';
-const HEADERS = ['From', 'To', 'Message', 'Timestamp', 'Status', 'ImageUrl'];
-const DRIVE_FOLDER = 'PVRChat_Images';
+const HEADERS = ['From', 'To', 'Message', 'Timestamp', 'Status', 'ImageData'];
 
 // Hardcoded users
 const USERS = {
@@ -36,7 +35,6 @@ function getSheet_() {
       if (headers[h] !== HEADERS[h]) { match = false; break; }
     }
     if (!match) {
-      // clear all data and rewrite headers
       sheet.clear();
       sheet.appendRow(HEADERS);
       sheet.getRange('A:B').setNumberFormat('@');
@@ -50,14 +48,6 @@ function getSheet_() {
   }
 
   return sheet;
-}
-
-function getDriveFolder_() {
-  var folders = DriveApp.getFoldersByName(DRIVE_FOLDER);
-  if (folders.hasNext()) {
-    return folders.next();
-  }
-  return DriveApp.createFolder(DRIVE_FOLDER);
 }
 
 function otherUser_(me) {
@@ -74,9 +64,6 @@ function doGet(e) {
     if (p.action === 'getMessages' && p.user) {
       return getMessages(String(p.user));
     }
-    if (p.action === 'getImage' && p.id) {
-      return getImage(String(p.id));
-    }
     return jsonResponse({ success: false, message: 'Invalid request' });
   } catch (err) {
     return jsonResponse({ success: false, message: 'Error: ' + err.toString() });
@@ -92,15 +79,13 @@ function doPost(e) {
       case 'sendMessage':
         return sendMessage(String(data.from), String(data.to), String(data.message));
       case 'sendImage':
-        return sendImage(String(data.from), String(data.to), String(data.imageData), String(data.mimeType));
+        return sendImage(String(data.from), String(data.to), String(data.imageData));
       case 'heartbeat':
         return heartbeat(String(data.mobile));
       case 'setTyping':
         return setTyping(String(data.mobile), data.isTyping);
       case 'markRead':
         return markRead(String(data.mobile));
-      case 'clearChat':
-        return clearChat(String(data.mobile));
       default:
         return jsonResponse({ success: false, message: 'Invalid action' });
     }
@@ -142,44 +127,16 @@ function sendMessage(from, to, message) {
   return jsonResponse({ success: true });
 }
 
-function sendImage(from, to, base64Data, mimeType) {
-  if (!USERS[from] || !USERS[to] || !base64Data) {
+function sendImage(from, to, dataUrl) {
+  if (!USERS[from] || !USERS[to] || !dataUrl) {
     return jsonResponse({ success: false, message: 'Invalid' });
   }
 
   try {
-    var folder = getDriveFolder_();
-    var decoded = Utilities.base64Decode(base64Data);
-    var ext = 'webp';
-    if (mimeType.indexOf('png') !== -1) ext = 'png';
-    else if (mimeType.indexOf('jpeg') !== -1 || mimeType.indexOf('jpg') !== -1) ext = 'jpg';
-
-    var blob = Utilities.newBlob(decoded, mimeType, 'img_' + new Date().getTime() + '.' + ext);
-    var file = folder.createFile(blob);
-
-    // make publicly viewable
-    file.setSharing(DriftApp.Access.ANYONE_WITH_LINK, DriftApp.Permission.VIEW);
-
-    var fileId = file.getId();
-    var url = 'https://drive.google.com/uc?export=view&id=' + fileId;
-
     var sheet = getSheet_();
-    sheet.appendRow([from, to, '', new Date(), 'sent', url]);
+    sheet.appendRow([from, to, '', new Date(), 'sent', dataUrl]);
     typingUntil[from] = 0;
-
-    return jsonResponse({ success: true, url: url });
-  } catch (err) {
-    return jsonResponse({ success: false, message: 'Upload error: ' + err.toString() });
-  }
-}
-
-function getImage(fileId) {
-  try {
-    var file = DriveApp.getFileById(fileId);
-    var blob = file.getBlob();
-    return ContentService
-      .createOutput(blob.getBytes(), blob.getContentType())
-      .setMimeType(blob.getContentType());
+    return jsonResponse({ success: true });
   } catch (err) {
     return jsonResponse({ success: false, message: 'Error: ' + err.toString() });
   }
@@ -210,13 +167,15 @@ function getMessages(user) {
       }
 
       var ts = rows[i][3];
+      var imageData = rows[i][5] ? String(rows[i][5]) : '';
+
       messages.push({
         from: from,
         to: to,
         message: String(rows[i][2]),
         timestamp: (ts instanceof Date) ? ts.toISOString() : String(ts),
         status: status,
-        imageUrl: rows[i][5] ? String(rows[i][5]) : ''
+        imageData: imageData
       });
     }
   }
@@ -260,15 +219,5 @@ function markRead(user) {
 
 function setTyping(mobile, isTyping) {
   typingUntil[mobile] = isTyping ? Date.now() + TYPING_THRESHOLD_MS : 0;
-  return jsonResponse({ success: true });
-}
-
-function clearChat(mobile) {
-  if (!USERS[mobile]) return jsonResponse({ success: false, message: 'Invalid' });
-  var sheet = getSheet_();
-  var lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    sheet.deleteRows(2, lastRow - 1);
-  }
   return jsonResponse({ success: true });
 }
