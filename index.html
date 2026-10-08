@@ -435,12 +435,10 @@ function logout() {
 }
 
 async function clearChat() {
-  if (!confirm('Clear all messages?')) return;
-  try {
-    await apiPost({ action: 'clearChat', mobile: currentUser });
-    messagesData = [];
-    renderMessages();
-  } catch (e) {}
+  if (!confirm('Clear chat on your screen?')) return;
+  sessionStorage.setItem('chatClearedAt_' + currentUser, new Date().toISOString());
+  messagesData = [];
+  renderMessages();
 }
 
 function enterChat() {
@@ -484,6 +482,11 @@ async function refresh() {
         apiPost({ action: 'markRead', mobile: currentUser }).catch(() => {});
       }
       messagesData = result.messages;
+      const clearedAt = sessionStorage.getItem('chatClearedAt_' + currentUser);
+      if (clearedAt) {
+        const cutoff = new Date(clearedAt).getTime();
+        messagesData = messagesData.filter(m => new Date(m.timestamp).getTime() > cutoff);
+      }
       remoteTyping = result.typing || false;
       remoteOnline = !!result.otherOnline;
       renderStatus();
