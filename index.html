@@ -62,7 +62,35 @@ body {
 .screen.active { display: flex; }
 
 /* login */
-#loginScreen { justify-content: center; padding: 24px; }
+#loginScreen { position: relative; padding: 0; cursor: pointer; }
+#pinInput {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+  opacity: 0;
+}
+.login-center {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  pointer-events: none;
+}
+#loginHint { font-size: 14px; color: var(--text-muted); }
+#loginHint.hide { visibility: hidden; }
 
 .form-group { margin-bottom: 14px; }
 .form-group label {
@@ -284,6 +312,39 @@ body {
   cursor: pointer;
 }
 
+.image-preview {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.image-preview.show { display: flex; }
+.image-preview img {
+  width: 54px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.image-preview-info { flex: 1; min-width: 0; }
+.image-preview-title { font-size: 14px; font-weight: 500; }
+.image-preview-sub { font-size: 12px; color: var(--text-muted); }
+.image-preview-remove {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.image-preview-remove:hover { color: var(--danger); }
+
 .uploading-overlay {
   position: fixed;
   bottom: 80px;
@@ -305,10 +366,11 @@ body {
 <div id="app">
 
   <div id="loginScreen" class="screen active">
-    <div class="form-group">
-      <input type="password" id="pinInput" maxlength="4" inputmode="numeric" autofocus>
+    <input type="password" id="pinInput" maxlength="4" inputmode="numeric" autocomplete="off" autofocus>
+    <div class="login-center">
+      <div id="loginHint">Tap anywhere &amp; enter PIN</div>
+      <div id="loginError" class="error-msg"></div>
     </div>
-    <div id="loginError" class="error-msg"></div>
   </div>
 
   <div id="chatScreen" class="screen">
@@ -320,6 +382,14 @@ body {
       <button class="logout-btn" onclick="logout()">Logout</button>
     </div>
     <div class="messages-area" id="messagesArea"></div>
+    <div class="image-preview" id="imagePreview">
+      <img id="imagePreviewImg" alt="">
+      <div class="image-preview-info">
+        <div class="image-preview-title">Image uploaded</div>
+        <div class="image-preview-sub">Press send to send it</div>
+      </div>
+      <button class="image-preview-remove" onclick="removePendingImage()" aria-label="Remove image">&times;</button>
+    </div>
     <div class="composer">
       <button class="attach-btn" onclick="document.getElementById('imageInput').click()">
         <svg viewBox="0 0 24 24"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>
@@ -348,12 +418,18 @@ let pollTimer = null;
 let heartbeatTimer = null;
 let typingTimer = null;
 let lastTypingSent = 0;
+let pendingImage = null;
 
 const $ = id => document.getElementById(id);
+
+function updateLoginHint() {
+  $('loginHint').classList.toggle('hide', !!$('pinInput').value);
+}
 
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   $(id).classList.add('active');
+  if (id === 'loginScreen') setTimeout(() => $('pinInput').focus(), 50);
 }
 
 function showError(id, msg) {
@@ -417,10 +493,12 @@ async function login() {
     } else {
       showError('loginError', result.message || 'Invalid PIN');
       $('pinInput').value = '';
+      updateLoginHint();
     }
   } catch (e) {
     showError('loginError', 'Connection error');
     $('pinInput').value = '';
+    updateLoginHint();
   }
 }
 
@@ -431,14 +509,20 @@ function logout() {
   otherUser = null;
   sessionStorage.removeItem('chatUser');
   $('pinInput').value = '';
+  updateLoginHint();
+  removePendingImage();
   showScreen('loginScreen');
 }
 
 async function clearChat() {
-  if (!confirm('Clear chat on your screen?')) return;
-  sessionStorage.setItem('chatClearedAt_' + currentUser, new Date().toISOString());
+  if (!confirm('Clear chat? History is kept in the backup sheet.')) return;
+  const before = new Date().toISOString();
+  sessionStorage.setItem('chatClearedAt_' + currentUser, before);
   messagesData = [];
   renderMessages();
+  try {
+    await apiPost({ action: 'clearChat', user: currentUser, before });
+  } catch (e) {}
 }
 
 function enterChat() {
@@ -569,25 +653,49 @@ function renderMessages() {
 async function sendMessage() {
   const input = $('msgInput');
   const text = input.value.trim();
-  if (!text) return;
+  const imageData = pendingImage;
+  if (!text && !imageData) return;
 
-  messagesData.push({
-    from: currentUser,
-    to: otherUser,
-    message: text,
-    timestamp: new Date().toISOString(),
-    status: 'sent'
-  });
-  renderMessages();
-  const area = $('messagesArea');
-  area.scrollTop = area.scrollHeight;
-  input.value = '';
+  removePendingImage();
+
+  const ts = new Date().toISOString();
+
+  if (imageData) {
+    messagesData.push({
+      from: currentUser,
+      to: otherUser,
+      message: '',
+      imageData: imageData,
+      timestamp: ts,
+      status: 'sent'
+    });
+    renderMessages();
+    $('messagesArea').scrollTop = $('messagesArea').scrollHeight;
+  }
+
+  if (text) {
+    messagesData.push({
+      from: currentUser,
+      to: otherUser,
+      message: text,
+      timestamp: ts,
+      status: 'sent'
+    });
+    renderMessages();
+    $('messagesArea').scrollTop = $('messagesArea').scrollHeight;
+    input.value = '';
+  }
 
   stopLocalTyping();
   apiPost({ action: 'setTyping', mobile: currentUser, isTyping: false }).catch(() => {});
 
   try {
-    await apiPost({ action: 'sendMessage', from: currentUser, to: otherUser, message: text });
+    if (imageData) {
+      await apiPost({ action: 'sendImage', from: currentUser, to: otherUser, imageData: imageData });
+    }
+    if (text) {
+      await apiPost({ action: 'sendMessage', from: currentUser, to: otherUser, message: text });
+    }
     refresh();
   } catch (e) {}
 }
@@ -635,7 +743,6 @@ function compressImage(file) {
       const qualities = [0.7, 0.5, 0.35, 0.25, 0.15, 0.1];
       let qi = 0;
       function tryQuality() {
-        canvas.toDataURL('image/webp', qualities[qi]);
         const dataUrl = canvas.toDataURL('image/webp', qualities[qi]);
         // sheet cell limit ~50000 chars, keep under 48000
         if (dataUrl.length <= 48000 || qi >= qualities.length - 1) {
@@ -652,6 +759,12 @@ function compressImage(file) {
   });
 }
 
+function removePendingImage() {
+  pendingImage = null;
+  $('imagePreview').classList.remove('show');
+  $('imagePreviewImg').removeAttribute('src');
+}
+
 async function handleImageSelect(e) {
   const file = e.target.files[0];
   e.target.value = '';
@@ -659,25 +772,20 @@ async function handleImageSelect(e) {
 
   const overlay = document.createElement('div');
   overlay.className = 'uploading-overlay';
-  overlay.textContent = 'Compressing image…';
+  overlay.textContent = 'Uploading image…';
   document.body.appendChild(overlay);
 
   try {
     const dataUrl = await compressImage(file);
-    if (!dataUrl) { overlay.remove(); return; }
-
-    overlay.textContent = 'Sending image…';
-
-    await apiPost({
-      action: 'sendImage',
-      from: currentUser,
-      to: otherUser,
-      imageData: dataUrl
-    });
-
-    refresh();
+    if (dataUrl) {
+      pendingImage = dataUrl;
+      $('imagePreviewImg').src = dataUrl;
+      $('imagePreview').classList.add('show');
+      overlay.textContent = 'Image ready — press send';
+      await new Promise(r => setTimeout(r, 500));
+    }
   } catch (err) {
-    console.error('Image send error:', err);
+    console.error('Image upload error:', err);
   } finally {
     overlay.remove();
   }
@@ -689,6 +797,7 @@ $('msgInput').addEventListener('keydown', e => {
 });
 $('msgInput').addEventListener('input', startLocalTyping);
 $('pinInput').addEventListener('input', () => {
+  updateLoginHint();
   if ($('pinInput').value.length === 4) login();
 });
 
@@ -699,6 +808,8 @@ window.addEventListener('load', () => {
     currentUser = saved;
     otherUser = saved === '9236647910' ? '9198433007' : '9236647910';
     enterChat();
+  } else {
+    $('pinInput').focus();
   }
 });
 </script>
