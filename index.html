@@ -89,9 +89,6 @@ body {
   gap: 8px;
   pointer-events: none;
 }
-#loginHint { font-size: 14px; color: var(--text-muted); }
-#loginHint.hide { visibility: hidden; }
-
 .form-group { margin-bottom: 14px; }
 .form-group label {
   display: block;
@@ -358,6 +355,106 @@ body {
   z-index: 100;
 }
 
+/* reply quote inside bubble */
+.msg-row.selected .msg-bubble { box-shadow: 0 0 0 2px rgba(0,168,132,0.6); }
+
+.msg-quote {
+  border-left: 4px solid var(--primary);
+  background: rgba(0,0,0,0.06);
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  .msg-quote { background: rgba(255,255,255,0.08); }
+}
+.msg-quote-name { font-size: 12px; font-weight: 600; color: var(--primary); margin-bottom: 1px; }
+.msg-quote-text {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+/* reply preview above composer */
+.reply-bar {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.reply-bar.show { display: flex; }
+.reply-bar-body {
+  flex: 1;
+  min-width: 0;
+  border-left: 4px solid var(--primary);
+  padding-left: 8px;
+}
+.reply-bar-name { font-size: 12px; font-weight: 600; color: var(--primary); }
+.reply-bar-text {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reply-bar-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.reply-bar-close:hover { color: var(--danger); }
+
+/* long-press action sheet */
+.action-sheet {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 200;
+}
+.action-sheet.show { display: flex; }
+.action-sheet-inner {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  animation: sheetUp 0.15s ease-out;
+}
+@keyframes sheetUp {
+  from { transform: translateY(20px); opacity: 0.6; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.action-item {
+  display: block;
+  width: 100%;
+  padding: 15px 22px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.action-item:hover { background: var(--surface-alt); }
+.action-item.danger { color: var(--danger); }
+
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
 </style>
@@ -368,7 +465,6 @@ body {
   <div id="loginScreen" class="screen active">
     <input type="password" id="pinInput" maxlength="4" inputmode="numeric" autocomplete="off" autofocus>
     <div class="login-center">
-      <div id="loginHint">Tap anywhere &amp; enter PIN</div>
       <div id="loginError" class="error-msg"></div>
     </div>
   </div>
@@ -382,6 +478,13 @@ body {
       <button class="logout-btn" onclick="logout()">Logout</button>
     </div>
     <div class="messages-area" id="messagesArea"></div>
+    <div class="reply-bar" id="replyBar">
+      <div class="reply-bar-body">
+        <div class="reply-bar-name" id="replyBarName"></div>
+        <div class="reply-bar-text" id="replyBarText"></div>
+      </div>
+      <button class="reply-bar-close" onclick="cancelReply()" aria-label="Cancel reply">&times;</button>
+    </div>
     <div class="image-preview" id="imagePreview">
       <img id="imagePreviewImg" alt="">
       <div class="image-preview-info">
@@ -406,6 +509,14 @@ body {
 
 </div>
 
+<div class="action-sheet" id="actionSheet" onclick="if (event.target === this) closeActionSheet()">
+  <div class="action-sheet-inner">
+    <button class="action-item" onclick="startReply()">Reply</button>
+    <button class="action-item danger" onclick="deleteSelectedMessage()">Delete</button>
+    <button class="action-item" onclick="closeActionSheet()">Cancel</button>
+  </div>
+</div>
+
 <script>
 const API = 'https://script.google.com/macros/s/AKfycbwGBCYG84y4WJ62Uxn64_N2mX-UTznKYgsujGLg8JTl_vCFBTyLtBy_TZ76p8q1TTbKYQ/exec';
 
@@ -419,12 +530,10 @@ let heartbeatTimer = null;
 let typingTimer = null;
 let lastTypingSent = 0;
 let pendingImage = null;
+let replyTo = null;
+let selectedMsg = null;
 
 const $ = id => document.getElementById(id);
-
-function updateLoginHint() {
-  $('loginHint').classList.toggle('hide', !!$('pinInput').value);
-}
 
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -464,6 +573,17 @@ function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function parseReply(reply) {
+  if (!reply) return null;
+  if (typeof reply === 'object') return reply;
+  try {
+    const obj = JSON.parse(reply);
+    return (obj && typeof obj === 'object') ? obj : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 function statusTick(status) {
   if (status === 'sent') {
     return '<svg viewBox="0 0 24 24" width="16" height="16" fill="#8696a0"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
@@ -493,12 +613,10 @@ async function login() {
     } else {
       showError('loginError', result.message || 'Invalid PIN');
       $('pinInput').value = '';
-      updateLoginHint();
     }
   } catch (e) {
     showError('loginError', 'Connection error');
     $('pinInput').value = '';
-    updateLoginHint();
   }
 }
 
@@ -509,8 +627,9 @@ function logout() {
   otherUser = null;
   sessionStorage.removeItem('chatUser');
   $('pinInput').value = '';
-  updateLoginHint();
   removePendingImage();
+  cancelReply();
+  closeActionSheet();
   showScreen('loginScreen');
 }
 
@@ -607,7 +726,7 @@ function renderMessages() {
   let html = '';
   let lastDate = '';
 
-  messagesData.forEach(msg => {
+  messagesData.forEach((msg, idx) => {
     const d = new Date(msg.timestamp);
     const dateKey = d.toDateString();
     if (dateKey !== lastDate) {
@@ -620,6 +739,16 @@ function renderMessages() {
 
     const isSent = msg.from === currentUser;
     let content = '';
+
+    const quoted = parseReply(msg.reply);
+    if (quoted) {
+      content +=
+        '<div class="msg-quote">' +
+          '<div class="msg-quote-name">' + escapeHtml(quoted.f === currentUser ? 'You' : 'Contact') + '</div>' +
+          '<div class="msg-quote-text">' + escapeHtml(quoted.t || 'Photo') + '</div>' +
+        '</div>';
+    }
+
     if (msg.imageData) {
       content += '<img class="msg-img" src="' + escapeHtml(msg.imageData) + '" loading="lazy">';
     }
@@ -627,7 +756,7 @@ function renderMessages() {
       content += '<span>' + escapeHtml(msg.message) + '</span>';
     }
     html +=
-      '<div class="msg-row ' + (isSent ? 'sent' : 'received') + '">' +
+      '<div class="msg-row ' + (isSent ? 'sent' : 'received') + '" data-index="' + idx + '">' +
         '<div class="msg-bubble">' +
           content +
           '<span class="msg-meta">' +
@@ -656,6 +785,10 @@ async function sendMessage() {
   const imageData = pendingImage;
   if (!text && !imageData) return;
 
+  const replyPayload = replyTo
+    ? JSON.stringify({ t: replyTo.imageData ? 'Photo' : replyTo.message, f: replyTo.from })
+    : '';
+
   removePendingImage();
 
   const ts = new Date().toISOString();
@@ -667,7 +800,8 @@ async function sendMessage() {
       message: '',
       imageData: imageData,
       timestamp: ts,
-      status: 'sent'
+      status: 'sent',
+      reply: replyPayload
     });
     renderMessages();
     $('messagesArea').scrollTop = $('messagesArea').scrollHeight;
@@ -679,22 +813,24 @@ async function sendMessage() {
       to: otherUser,
       message: text,
       timestamp: ts,
-      status: 'sent'
+      status: 'sent',
+      reply: replyPayload
     });
     renderMessages();
     $('messagesArea').scrollTop = $('messagesArea').scrollHeight;
     input.value = '';
   }
 
+  cancelReply();
   stopLocalTyping();
   apiPost({ action: 'setTyping', mobile: currentUser, isTyping: false }).catch(() => {});
 
   try {
     if (imageData) {
-      await apiPost({ action: 'sendImage', from: currentUser, to: otherUser, imageData: imageData });
+      await apiPost({ action: 'sendImage', from: currentUser, to: otherUser, imageData: imageData, reply: replyPayload });
     }
     if (text) {
-      await apiPost({ action: 'sendMessage', from: currentUser, to: otherUser, message: text });
+      await apiPost({ action: 'sendMessage', from: currentUser, to: otherUser, message: text, reply: replyPayload });
     }
     refresh();
   } catch (e) {}
@@ -791,13 +927,104 @@ async function handleImageSelect(e) {
   }
 }
 
+// ---- message actions (reply / delete) ----
+function openActionSheet(msg, rowEl) {
+  selectedMsg = msg;
+  document.querySelectorAll('.msg-row.selected').forEach(r => r.classList.remove('selected'));
+  if (rowEl) rowEl.classList.add('selected');
+  $('actionSheet').classList.add('show');
+}
+
+function closeActionSheet() {
+  $('actionSheet').classList.remove('show');
+  document.querySelectorAll('.msg-row.selected').forEach(r => r.classList.remove('selected'));
+  selectedMsg = null;
+}
+
+function startReply() {
+  if (!selectedMsg) return closeActionSheet();
+  replyTo = selectedMsg;
+  $('replyBarName').textContent = selectedMsg.from === currentUser ? 'You' : 'Contact';
+  $('replyBarText').textContent = selectedMsg.imageData ? 'Photo' : (selectedMsg.message || '');
+  $('replyBar').classList.add('show');
+  closeActionSheet();
+  $('msgInput').focus();
+}
+
+function cancelReply() {
+  replyTo = null;
+  $('replyBar').classList.remove('show');
+}
+
+async function deleteSelectedMessage() {
+  const msg = selectedMsg;
+  closeActionSheet();
+  if (!msg) return;
+  if (!confirm('Delete this message for everyone?')) return;
+  try {
+    await apiPost({ action: 'deleteMessage', user: currentUser, timestamp: msg.timestamp });
+  } catch (e) {}
+  messagesData = messagesData.filter(m =>
+    !(m.from === msg.from && m.to === msg.to && m.timestamp === msg.timestamp)
+  );
+  renderMessages();
+  refresh();
+}
+
+// ---- long press / right click to open actions ----
+let pressTimer = null;
+let pressStartX = 0;
+let pressStartY = 0;
+
+function messageAt(target) {
+  const rowEl = target.closest ? target.closest('.msg-row') : null;
+  if (!rowEl || rowEl.dataset.index === undefined) return null;
+  const msg = messagesData[parseInt(rowEl.dataset.index, 10)];
+  return msg ? { msg, rowEl } : null;
+}
+
+function pressStart(e) {
+  const hit = messageAt(e.target);
+  if (!hit) return;
+  const point = e.touches ? e.touches[0] : e;
+  pressStartX = point.clientX;
+  pressStartY = point.clientY;
+  cancelPress();
+  pressTimer = setTimeout(() => {
+    pressTimer = null;
+    if (navigator.vibrate) navigator.vibrate(15);
+    openActionSheet(hit.msg, hit.rowEl);
+  }, 500);
+}
+
+function pressMove(e) {
+  if (!pressTimer) return;
+  const point = e.touches ? e.touches[0] : e;
+  if (Math.abs(point.clientX - pressStartX) > 10 || Math.abs(point.clientY - pressStartY) > 10) cancelPress();
+}
+
+function cancelPress() {
+  if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+}
+
 // ---- events ----
+$('messagesArea').addEventListener('touchstart', pressStart, { passive: true });
+$('messagesArea').addEventListener('touchmove', pressMove, { passive: true });
+$('messagesArea').addEventListener('touchend', cancelPress);
+$('messagesArea').addEventListener('touchcancel', cancelPress);
+$('messagesArea').addEventListener('contextmenu', e => {
+  const hit = messageAt(e.target);
+  if (!hit) return;
+  e.preventDefault();
+  openActionSheet(hit.msg, hit.rowEl);
+});
+$('messagesArea').addEventListener('scroll', cancelPress, { passive: true });
+
 $('msgInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
 });
 $('msgInput').addEventListener('input', startLocalTyping);
 $('pinInput').addEventListener('input', () => {
-  updateLoginHint();
   if ($('pinInput').value.length === 4) login();
 });
 
