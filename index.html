@@ -463,7 +463,7 @@ body {
 <div id="app">
 
   <div id="loginScreen" class="screen active">
-    <input type="password" id="pinInput" maxlength="4" inputmode="numeric" autocomplete="off" autofocus>
+    <input type="text" id="pinInput" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" name="pin" autofocus>
     <div class="login-center">
       <div id="loginError" class="error-msg"></div>
     </div>
@@ -1029,6 +1029,16 @@ $('pinInput').addEventListener('input', () => {
 });
 
 // ---- init ----
+function focusPin() {
+  const pin = $('pinInput');
+  if (!pin || !$('loginScreen').classList.contains('active')) return;
+  pin.focus();
+  try { pin.setSelectionRange(pin.value.length, pin.value.length); } catch (e) {}
+}
+
+document.addEventListener('touchstart', () => { setTimeout(focusPin, 0); }, { once: true, passive: true });
+document.addEventListener('click', () => { setTimeout(focusPin, 0); }, { once: true });
+
 window.addEventListener('load', () => {
     const saved = sessionStorage.getItem('chatUser');
   if (saved) {
@@ -1036,7 +1046,8 @@ window.addEventListener('load', () => {
     otherUser = saved === '9236647910' ? '9198433007' : '9236647910';
     enterChat();
   } else {
-    $('pinInput').focus();
+    focusPin();
+    setTimeout(focusPin, 300);
   }
 });
 </script>
